@@ -47,7 +47,7 @@ Sources : le cours (`Cybersecurity_260920_142402 (1).pdf`, 108 pages), la vidéo
 | **Idéologie** | Destruction logique ou physique, vol de données stratégiques, divulgation |
 | **Obtenir des capacités d'attaque** | Piéger des sites ou logiciels de confiance, espionner le réseau, contourner les mécanismes de sécurité |
 
-### Les 3 chiffres du quiz (à connaître)
+### Les 3 chiffres clés (à connaître)
 
 | Question | Réponse |
 |---|---|
@@ -709,11 +709,22 @@ Une structure qui marche pour toute étude de cas :
 
 **Astuce :** reliez toujours à un exemple du cours ou du TD, par exemple : « comme dans le TD où le pare-feu par IP a échoué, une seule couche ne suffit pas ».
 
+### Méthode pour une question de cours (réponse rédigée)
+
+Le DS n'a **pas de QCM** : tout est rédigé. Pour chaque question, en 4 temps :
+
+1. **Définir** le terme en une phrase (ex. « La défense en profondeur est une stratégie multicouche… »).
+2. **Expliquer** le fonctionnement ou les éléments (ex. les couches : physique, réseau, application, données).
+3. **Illustrer** avec un exemple du cours, de la vidéo ou du TD (ex. clé de fonction + validation + rôles SQL + logs).
+4. **Conclure** sur l'intérêt ou la limite (ex. « une seule couche peut tomber, plusieurs couches rendent l'attaque plus coûteuse »).
+
+Pour une question « comparer A et B » : faites un **tableau** (critères en lignes), puis une phrase de conclusion sur quand utiliser l'un ou l'autre.
+
 ---
 
 ## 16. Auto-test : questions de cours
 
-Cachez la colonne de droite et répondez.
+Cachez la colonne de droite et répondez. Au DS, développez chaque réponse avec la méthode de la section 15 (définir, expliquer, illustrer, conclure) : ces réponses courtes servent seulement à vérifier que vous savez.
 
 | Question | Réponse |
 |---|---|
