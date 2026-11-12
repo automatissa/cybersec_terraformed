@@ -8,7 +8,7 @@ Progress notes for Phase 2 of the exercise (`Cloud-Exercise-Terraform-Windows11.
 | 6.2 Input validation | Done (`src/sanitize.py`, HTTP 400 on invalid name) |
 | 6.3 Key Vault + Managed Identity | Done (`infra/keyvault.tf`) |
 | 6.4 Least-privilege database roles | Done (editor login for POST, reader login for GET `/api/names`) |
-| 6.5 Network segregation, Level 1 | Code written, **not applied yet** |
+| 6.5 Network segregation, Level 1 | Applied 2026-11-12. Per-IP rules **break the app on Linux Y1**, so `0.0.0.0` was restored (see section 4). Workstation switch ready, not used yet |
 | 6.5 Network segregation, Level 2 | Not started (needs Flex Consumption plan, extra cost) |
 | 6.6 Monitoring discussion | To write |
 
@@ -26,7 +26,7 @@ Both have been active since Phase 1.
 
 ## 2. Reproducing the 6.1 test
 
-Easiest: `.\scripts\test-api.ps1` (see section 8). Manual version below.
+Easiest: `.\scripts\alice.ps1` from any folder (calls without and with the key). Manual version below.
 
 Manual version, run from `src\` (paths are relative):
 
@@ -70,27 +70,37 @@ The teacher's update contains a reference solution for 6.2/6.3 and the new secti
 
 | File | Change |
 |---|---|
-| `infra/sql.tf` | Removed the `0.0.0.0` `AllowAzureServices` rule; added one firewall rule per Function outbound IP (`function_outbound`, `for_each`); workstation rule made switchable with `count`; `moved` block so the existing rule is not recreated |
+| `infra/sql.tf` | Added one firewall rule per Function outbound IP (`function_outbound`, `for_each`, 25 rules); workstation rule made switchable with `count`; `moved` block so the existing rule is not recreated. The `0.0.0.0` rule was removed, then **restored** (see below) |
 | `infra/variables.tf` | New variable `allow_workstation_access` (bool, default `true`) |
 | `infra/functions.tf` | `lifecycle.ignore_changes` on the `hidden-link` tag that Azure adds to link Application Insights |
 
-Dry-run result (`terraform plan`): **25 to add, 0 to change, 1 to destroy** (the `0.0.0.0` rule).
+### What happened when applied (2026-11-12)
 
-**Limit of this control:** on the Consumption (Y1) plan the outbound addresses come from a pool shared with other customers' apps and can change when Azure moves the app. It is a filter, not isolation; a change of addresses causes an outage until the next `terraform apply`.
+1. Applied: 25 per-IP rules added, `0.0.0.0` rule destroyed. Code republished.
+2. Test: POST → 200, but GET `/names` → 500 every time.
+3. Application Insights `traces`:
+   ```
+   Cannot open server 'sql-namecounter-lab-8cd658' requested by the login.
+   Client with IP address '131.189.239.33' is not allowed to access the server. (40615)
+   ```
+4. `az functionapp show --query "{possible:possibleOutboundIpAddresses, current:outboundIpAddresses}"`: `131.189.239.33` is in **neither** list.
+5. Decision: restore the `0.0.0.0` rule (1 to add). Retest: POST 200, GET 200 (3/3).
+
+**Conclusion:** on **Linux Consumption (Y1)**, workers run in a shared regional pool and the outbound IPs Azure publishes for the app are incomplete. An IP allow-list on the database is therefore not just "a filter that can drift": it breaks the app at random from day one (POST happened to run on a listed IP, GET did not). Network-level isolation of the database is only reliable with VNet integration + private endpoint (Level 2), which Y1 does not support.
+
+The per-IP rules are kept (harmless, they document the published list); with `0.0.0.0` present they add no restriction.
 
 ## 5. Next steps
 
-1. If a plan was interrupted, release the state lock: `terraform force-unlock <lock-id>` in `infra\` (the ID is printed in the lock error).
-2. Finish every task that needs the PC to reach the database (6.4 users and roles).
-3. Apply Level 1:
+1. Close workstation access once the PC no longer needs `sqlcmd` (still meaningful: your PC is not an Azure IP):
    ```powershell
    cd infra
-   terraform plan -out=tfplan
+   terraform plan -var="allow_workstation_access=false" -out=tfplan
    terraform apply tfplan
    ```
-4. Republish the code (`function_app.py` changed, `sanitize.py` is new): `func azure functionapp publish $FuncName` from `src\`, then rerun the tests in section 2.
-5. Close workstation access: `terraform apply -var="allow_workstation_access=false"`. The API must still work; `sqlcmd` from the PC must fail.
-6. Reopen it only for a maintenance window: `-var="allow_workstation_access=true"`.
+   Then `.\scripts\alice.ps1` must still return 200. Reopen for maintenance with `allow_workstation_access=true`.
+2. If a plan is interrupted, release the state lock: `terraform force-unlock <lock-id>` in `infra\` (the ID is printed in the lock error).
+3. Optional: Level 2 (Flex Consumption + private endpoint), the only real fix for the SQL exposure.
 
 ## 6. Exposure map (6.5.1) — draft, to review
 
@@ -98,7 +108,7 @@ Dry-run result (`terraform plan`): **25 to add, 0 to change, 1 to destroy** (the
 |---|---|---|---|
 | Function inbound | Whole internet (required) | Function key (6.1), WAF / API gateway, rate limiting | Works on every plan |
 | Function outbound | Anywhere | VNet integration + subnet rules | Not available on Y1 |
-| SQL server | Function outbound IPs + PC IP (after Level 1) | Private endpoint, deny public access | VNet; Function needs VNet integration (not Y1) |
+| SQL server | Any Azure resource (`0.0.0.0` rule, kept because per-IP rules fail on Linux Y1) + PC IP | Private endpoint, deny public access | VNet; Function needs VNet integration (not Y1) |
 | Key Vault | Internet, protected by RBAC | Private endpoint, deny public access | Same as SQL |
 | Function storage account | Internet, protected by keys | Private endpoints (blob/file) | Plan with VNet integration |
 | Terraform state storage | Internet, protected by Entra ID + RBAC | Network rules allowing only the workstation/pipeline | Workstation IP must stay allowed |
@@ -110,19 +120,23 @@ Dry-run result (`terraform plan`): **25 to add, 0 to change, 1 to destroy** (the
 - 6.4: why two narrow roles are safer than one `db_owner` account (5–10 lines).
 - 6.5.5 and 6.6 discussion questions.
 
-## 8. Automation scripts (`scripts\`)
+## 8. Useful commands
 
-Run from the repo root, after `az login`. If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope Process RemoteSigned`.
+```powershell
+.\scripts\alice.ps1                                         # call with and without key
+cd src; func azure functionapp publish func-namecounter-lab-8cd658; cd ..   # publish code
+terraform -chdir=infra plan -out=tfplan; terraform -chdir=infra apply tfplan  # deploy infra
+```
 
-| Script | What it does |
-|---|---|
-| `.\scripts\deploy.ps1` | `fmt` + `validate` + `plan`, then asks `yes` before `apply`. Options: `-PlanOnly`, `-CloseWorkstation` (6.5: remove your PC's SQL rule), `-DetectIp` (update the rule to your current public IP), `-AutoApprove` |
-| `.\scripts\publish.ps1` | Publishes `src\` to the Function App (no need to `cd src`) |
-| `.\scripts\test-api.ps1` | 7 checks: no key / wrong key → 401, valid POST → 200, SQL injection / not JSON / missing name → 400, GET `/names` → 200. Retries automatically while the database wakes up from auto-pause. `-Name Bob` to change the name |
-| `.\scripts\logs.ps1` | Recent requests and errors from Application Insights (`-Minutes 120`). `-Summary` gives the 6.6 numbers: calls per hour, 4xx/5xx, client IPs |
-| `.\scripts\all.ps1` | deploy → publish → test. `-SkipDeploy` for a code-only change, `-CloseWorkstation` for 6.5 |
+Read Application Insights without the CLI extension (it prompts to install and fails non-interactively):
 
-`scripts\common.ps1` holds the shared helpers (Terraform outputs, function key, App Insights query through the REST API so no CLI extension is needed). The function key is never printed.
+```powershell
+$id = az resource show -g rg-namecounter-lab-8cd658 -n appi-namecounter-lab-8cd658 --resource-type microsoft.insights/components --query id -o tsv
+@{query="union traces, exceptions | where timestamp > ago(30m) | where severityLevel >= 2 or itemType=='exception' | project timestamp, operation_Name, message, innermostMessage | order by timestamp desc | take 10"} | ConvertTo-Json | Out-File -Encoding ascii q.json
+(az rest --method post --url "https://management.azure.com$id/query?api-version=2018-04-20" --body "@q.json" -o json | ConvertFrom-Json).tables[0].rows
+```
+
+Telemetry arrives 1–3 minutes after the call.
 
 **Observations from the logs (useful for 6.6):**
 - Calls rejected with **401 do not appear in the `requests` table**: the Functions host rejects them before the function runs. A brute-force on the key would leave no trace there.

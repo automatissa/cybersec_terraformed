@@ -21,10 +21,19 @@ resource "azurerm_mssql_database" "db" {
   tags = azurerm_resource_group.rg.tags
 }
 
-# 6.5.2 a) The 0.0.0.0 "AllowAzureServices" rule is removed: it let any Azure
-# customer's resources attempt a connection. Only the Function's own possible
-# outbound IPs are allowed. On Y1 these IPs come from a shared pool and can
-# change: this is a filter, not isolation.
+# 6.5.2 a) Tried: replace the 0.0.0.0 rule with the Function's outbound IPs only.
+# Result on Linux Consumption (Y1): the Function connected from 131.189.239.33,
+# an IP absent from both possible_outbound_ip_addresses and outbound_ip_addresses,
+# so calls failed at random (error 40615). The 0.0.0.0 rule is kept until
+# Level 2 (VNet integration + private endpoint) provides real isolation.
+resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
+  name             = "AllowAzureServices"
+  server_id        = azurerm_mssql_server.sql.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
+# Per-IP rules kept: harmless, and they document the published list.
 locals {
   function_outbound_ips = toset(split(",", azurerm_linux_function_app.app.possible_outbound_ip_addresses))
 }
