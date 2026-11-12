@@ -27,16 +27,30 @@ resource "azurerm_role_assignment" "func_kv_reader" {
   principal_id         = azurerm_linux_function_app.app.identity[0].principal_id
 }
 
-resource "azurerm_key_vault_secret" "sql_conn" {
-  name         = "SqlConnString"
+resource "azurerm_key_vault_secret" "sql_conn_editor" {
+  name         = "SqlConnStringEditor"
   key_vault_id = azurerm_key_vault.kv.id
   value = join("", [
     "Driver={ODBC Driver 18 for SQL Server};",
     "Server=tcp:${azurerm_mssql_server.sql.fully_qualified_domain_name},1433;",
     "Database=${azurerm_mssql_database.db.name};",
-    "Uid=${var.sql_admin_login};Pwd=${var.sql_admin_password};",
+    "Uid=app_editor_user;Pwd=${var.app_editor_password};",
     "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
   ])
 
   depends_on = [azurerm_role_assignment.me_kv_officer] # role propagation is invisible to Terraform
+}
+
+resource "azurerm_key_vault_secret" "sql_conn_reader" {
+  name         = "SqlConnStringReader"
+  key_vault_id = azurerm_key_vault.kv.id
+  value = join("", [
+    "Driver={ODBC Driver 18 for SQL Server};",
+    "Server=tcp:${azurerm_mssql_server.sql.fully_qualified_domain_name},1433;",
+    "Database=${azurerm_mssql_database.db.name};",
+    "Uid=app_reader_user;Pwd=${var.app_reader_password};",
+    "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+  ])
+
+  depends_on = [azurerm_role_assignment.me_kv_officer]
 }

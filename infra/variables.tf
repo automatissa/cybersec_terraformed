@@ -68,3 +68,21 @@ variable "log_retention_days" {
     error_message = "log_retention_days must be between 30 and 730."
   }
 }
+
+variable "app_editor_password" {
+  type        = string
+  description = "Password for the least-privilege app_editor_user SQL login (POST function)."
+  sensitive   = true
+}
+
+variable "app_reader_password" {
+  type        = string
+  description = "Password for the least-privilege app_reader_user SQL login (GET function)."
+  sensitive   = true
+}
+
+variable "allow_workstation_access" {
+  type        = bool
+  description = "Allow the student workstation IP through the SQL firewall (maintenance window only)."
+  default     = true
+}

@@ -21,17 +21,34 @@ resource "azurerm_mssql_database" "db" {
   tags = azurerm_resource_group.rg.tags
 }
 
-# Phase 1 only: lets Azure-hosted services reach the server (see Phase 2, section 6.5).
-resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
-  name             = "AllowAzureServices"
-  server_id        = azurerm_mssql_server.sql.id
-  start_ip_address = "0.0.0.0"
-  end_ip_address   = "0.0.0.0"
+# 6.5.2 a) The 0.0.0.0 "AllowAzureServices" rule is removed: it let any Azure
+# customer's resources attempt a connection. Only the Function's own possible
+# outbound IPs are allowed. On Y1 these IPs come from a shared pool and can
+# change: this is a filter, not isolation.
+locals {
+  function_outbound_ips = toset(split(",", azurerm_linux_function_app.app.possible_outbound_ip_addresses))
 }
 
+resource "azurerm_mssql_firewall_rule" "function_outbound" {
+  for_each         = local.function_outbound_ips
+  name             = "func-${replace(each.value, ".", "-")}"
+  server_id        = azurerm_mssql_server.sql.id
+  start_ip_address = each.value
+  end_ip_address   = each.value
+}
+
+# 6.5.2 b) Workstation access only during maintenance windows.
 resource "azurerm_mssql_firewall_rule" "allow_student_ip" {
+  count            = var.allow_workstation_access ? 1 : 0
   name             = "AllowStudentWorkstation"
   server_id        = azurerm_mssql_server.sql.id
   start_ip_address = var.client_ip_address
   end_ip_address   = var.client_ip_address
+}
+
+# Adding count changes the address; this tells Terraform it is the same rule
+# (no destroy/recreate).
+moved {
+  from = azurerm_mssql_firewall_rule.allow_student_ip
+  to   = azurerm_mssql_firewall_rule.allow_student_ip[0]
 }

@@ -14,7 +14,7 @@ terraform {
 
   backend "azurerm" {
     resource_group_name  = "rg-tfstate-prod"
-    storage_account_name = "tfstatergyr" # <-- your state storage account
+    storage_account_name = "tfstatergid" # <-- your state storage account
     container_name       = "tfstate"
     key                  = "namecounter.prod.tfstate"
     use_azuread_auth     = true # authenticate with your az login identity
